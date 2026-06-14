@@ -1,12 +1,16 @@
 ---
+---
 name: world-cup-assist-value-trading
-description: "World Cup Assist Value trading signal: buy players when Simmer assist price is 8% below form-based value."
-version: 1.0.0
-author: Hermes Agent
+displayName: "World Cup Assist Value Trader"
+description: "Scans all World Cup Most Assists markets on Simmer, fetches real club stats from FBref, and generates buy signals when a player is undervalued by 8%+ vs their form-based expected price."
+version: 1.0.1
+author: maxhejohansen-boop
 license: MIT
 platforms: [linux, macos, windows]
-categories: [mlops]
-tags: [trading, assist, world cup, simmer, signal]
+category: world-cup
+categories: [trading, world-cup]
+tags: [trading, assists, world-cup, simmer, signal, football, soccer]
+---
 ---
 
 # World Cup Assist Value Trading Skill
