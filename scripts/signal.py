@@ -1,25 +1,26 @@
 import os
-import requests
 import re
+import requests
+from simmer import Client
 
 SIMMER_API_KEY = os.environ.get("SIMMER_API_KEY")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
-BACKEND_URL = "https://api.simmer.markets"
-SIMMER_HEADERS = {"Authorization": "Bearer " + str(SIMMER_API_KEY)}
 DRY_RUN = True
 BANKROLL = 1000
 THRESHOLD = 0.08
+MIN_PRICE = 0.02
+
+client = Client()
 
 def get_all_players():
-    r = requests.get(BACKEND_URL + "/api/sdk/markets?q=assists&limit=50&offset=0", headers=SIMMER_HEADERS)
-    data = r.json()
-    players = [m for m in data["markets"] if m.get("event_name") == "World Cup: Most Assists"]
+    markets = client.get_markets(q="assists", limit=50)
+    players = [m for m in markets.get("markets", []) if m.get("event_name") == "World Cup: Most Assists"]
     return [{"name": p["outcome_name"], "market_id": p["id"], "price": p["current_price"]} for p in players]
 
 def tavily_search(query):
-    r = requests.post("https://api.tavily.com/search", json={"api_key": TAVILY_API_KEY, "query": query, "max_results": 3, "include_domains": ["fbref.com", "whoscored.com", "espn.com"]})
+    r = requests.post("https://api.tavily.com/search", json={"api_key": TAVILY_API_KEY, "query": query, "max_results": 3, "include_domains": ["fbref.com", "espn.com", "whoscored.com"]})
     results = r.json().get("results", [])
-    return " ".join([x.get("content", "") + " " + x.get("title", "") for x in results])
+    return " ".join([x.get("content", "") for x in results])
 
 def find_number(text, patterns):
     for pattern in patterns:
@@ -40,18 +41,30 @@ def get_expected_price(name):
         score += 0.02
     return min(score, 0.45)
 
+print("=== World Cup Assist Value Trading Signal ===")
+print("--- DRY-RUN MODE ---" if DRY_RUN else "--- LIVE MODE ---")
+print()
+
 players = get_all_players()
 print("Found " + str(len(players)) + " players")
+print()
+
 signals = []
 for player in players:
     name = player["name"]
     price = player["price"]
+    if price < MIN_PRICE:
+        continue
     expected = get_expected_price(name)
     discount = (expected - price) / expected if expected > 0 else 0
-    if price >= 0.02 and discount >= THRESHOLD:
+    if discount >= THRESHOLD:
         signals.append({"name": name, "price": price, "expected": expected, "discount": discount})
 
 signals.sort(key=lambda x: x["discount"], reverse=True)
-print("BUY SIGNALS:")
+print("=== BUY SIGNALS ===")
 for s in signals:
     print(s["name"] + " | Market: " + str(round(s["price"],3)) + " | Expected: " + str(round(s["expected"],3)) + " | Discount: " + str(round(s["discount"]*100,1)) + "%")
+    if DRY_RUN:
+        print("  DRY RUN stake: $" + str(BANKROLL * 0.01))
+print()
+print("Total signals: " + str(len(signals)))
