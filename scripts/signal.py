@@ -1,21 +1,25 @@
 import os
 import re
 import requests
-from simmer import Client
+from simmer_sdk import SimmerClient
 
-SIMMER_API_KEY = os.environ.get("SIMMER_API_KEY")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 DRY_RUN = True
-BANKROLL = 1000
 THRESHOLD = 0.08
 MIN_PRICE = 0.02
+MAX_TRADE_USD = 10
+MAX_TRADES_PER_RUN = 5
+SKILL_SLUG = "world-cup-assist-value-trading"
 
-client = Client()
+client = SimmerClient.from_env()
 
 def get_all_players():
     markets = client.get_markets(q="assists", limit=50)
-    players = [m for m in markets.get("markets", []) if m.get("event_name") == "World Cup: Most Assists"]
-    return [{"name": p["outcome_name"], "market_id": p["id"], "price": p["current_price"]} for p in players]
+    players = []
+    for m in markets:
+        if "assist" in m.question.lower():
+            players.append({"name": m.question, "market_id": m.id, "price": m.current_probability})
+    return players
 
 def tavily_search(query):
     r = requests.post("https://api.tavily.com/search", json={"api_key": TAVILY_API_KEY, "query": query, "max_results": 3, "include_domains": ["fbref.com", "espn.com", "whoscored.com"]})
@@ -41,8 +45,9 @@ def get_expected_price(name):
         score += 0.02
     return min(score, 0.45)
 
-print("=== World Cup Assist Value Trading Signal ===")
-print("--- DRY-RUN MODE ---" if DRY_RUN else "--- LIVE MODE ---")
+print("=== World Cup Assist Value SIGNAL TOOL (template, not a tested edge) ===")
+print("Dry-run by default. Caps: $" + str(MAX_TRADE_USD) + "/trade, " + str(MAX_TRADES_PER_RUN) + " trades/run.")
+print("This prints signals only; it does not place trades. Fair-value formula is an unbacktested first pass.")
 print()
 
 players = get_all_players()
@@ -58,13 +63,15 @@ for player in players:
     expected = get_expected_price(name)
     discount = (expected - price) / expected if expected > 0 else 0
     if discount >= THRESHOLD:
-        signals.append({"name": name, "price": price, "expected": expected, "discount": discount})
+        signals.append({"name": name, "price": price, "expected": expected, "discount": discount, "market_id": player["market_id"]})
 
 signals.sort(key=lambda x: x["discount"], reverse=True)
-print("=== BUY SIGNALS ===")
+signals = signals[:MAX_TRADES_PER_RUN]
+
+print("=== SIGNALS ===")
 for s in signals:
     print(s["name"] + " | Market: " + str(round(s["price"],3)) + " | Expected: " + str(round(s["expected"],3)) + " | Discount: " + str(round(s["discount"]*100,1)) + "%")
-    if DRY_RUN:
-        print("  DRY RUN stake: $" + str(BANKROLL * 0.01))
+    if not DRY_RUN:
+        client.trade(market_id=s["market_id"], side="yes", amount=MAX_TRADE_USD, venue="sim", source="sdk:" + SKILL_SLUG, reasoning="Form-based expected price " + str(round(s["expected"],3)) + " vs market " + str(round(s["price"],3)) + ", discount " + str(round(s["discount"]*100,1)) + "%")
 print()
 print("Total signals: " + str(len(signals)))
